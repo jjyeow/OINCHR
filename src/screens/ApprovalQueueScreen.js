@@ -67,7 +67,7 @@ export default function ApprovalQueueScreen({ navigation }) {
         const isLeave = item.kind === 'LEAVE'
         const summary = isLeave
             ? `${item.staff?.name} - ${item.leaveType?.title}, ${formatDays(item.totalDays)}.`
-            : `${formatMoney(item.totalAmount)} to ${item.staff?.name}.`
+            : `${formatMoney(item.amount)} to ${item.staff?.name}.`
 
         Alert.alert(
             isLeave ? 'Approve this leave?' : 'Approve this claim?',
@@ -156,7 +156,7 @@ export default function ApprovalQueueScreen({ navigation }) {
                                     <Text style={styles.headline}>
                                         {isLeave
                                             ? formatDays(item.totalDays)
-                                            : formatMoney(item.totalAmount)}
+                                            : formatMoney(item.amount)}
                                     </Text>
                                 </View>
                             </View>
@@ -164,7 +164,7 @@ export default function ApprovalQueueScreen({ navigation }) {
                             <Text style={styles.dates}>
                                 {isLeave
                                     ? formatDateRange(item.startDate, item.endDate, item.dayPortion)
-                                    : [item.location?.title, item.roleTitle, item.categorySummary]
+                                    : [item.location?.title, item.roleTitle, item.claimType?.title]
                                         .filter(Boolean).join(' - ')}
                             </Text>
 

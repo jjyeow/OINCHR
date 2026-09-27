@@ -1,135 +1,118 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react'
-import {
-    Image, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, View,
-} from 'react-native'
+import React, { useCallback, useEffect, useState } from 'react'
+import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
-import { Ionicons } from '@expo/vector-icons'
 import Toast from 'react-native-toast-message'
 
-import { useAuth } from '../context/AuthContext'
 import * as claimApi from '../api/claims'
 import * as leaveApi from '../api/leave'
 import { describeError } from '../api/client'
+import { useAuth } from '../context/AuthContext'
+import { PERMISSION } from '../permissions'
 import { DateField, SelectField, TextField } from '../components/fields'
 import { AttachmentStrip, pickAttachment } from '../components/attachments'
-import FullScreenModal from '../components/FullScreenModal'
-import {
-    Card, ErrorBanner, LoadingView, PrimaryButton, SectionLabel,
-} from '../components/ui'
-import { formatDisplayDate, today } from '../lib/dates'
-import { formatMoney } from '../lib/money'
-import { colors, radius, spacing, type } from '../theme'
+import { ErrorBanner, LoadingView, PrimaryButton } from '../components/ui'
+import { today } from '../lib/dates'
+import { colors, spacing } from '../theme'
 
 /**
- * Backs both a staff member claiming for themselves and HR keying one in. A claim is
- * a title, a location, and one or more lines - the total is the sum of the lines and
- * is never typed by hand.
+ * Submits a claim, which is to say one expense. There is no folder to open first and
+ * nothing to add afterwards - the form is the whole act.
+ *
+ * Also where a receipt handed over in person gets keyed in: whoever holds Submit
+ * Claim On Behalf picks the staff member it belongs to.
  */
 export default function ClaimFormScreen({ navigation, route }) {
-    const isOnBehalf = route?.params?.mode === 'onBehalf'
-    const { user } = useAuth()
+    const { can } = useAuth()
+    const canFileForOthers = can(PERMISSION.SUBMIT_CLAIM_ON_BEHALF)
 
-    const [isLoading, setIsLoading] = useState(true)
-    const [loadError, setLoadError] = useState('')
+    // Editing reuses this form rather than duplicating it: the fields are the same,
+    // and the only differences are that they start filled and the claimant is fixed.
+    const editingClaim = route.params?.claim || null
+    const isEditing = !!editingClaim
+
     const [claimTypeList, setClaimTypeList] = useState([])
     const [locationList, setLocationList] = useState([])
     const [staffList, setStaffList] = useState([])
+    const [isLoading, setIsLoading] = useState(true)
+    const [loadError, setLoadError] = useState('')
 
+    // Blank means the expense is the caller's own, which is the common case.
     const [staffID, setStaffID] = useState(null)
-    const [title, setTitle] = useState('')
-    const [locationID, setLocationID] = useState(null)
-    const [itemList, setItemList] = useState([])
 
-    const [isAddingLine, setIsAddingLine] = useState(false)
-    const [isSubmitting, setIsSubmitting] = useState(false)
-    const [submitError, setSubmitError] = useState('')
+    const [claimTypeID, setClaimTypeID] = useState(editingClaim?.claimType?.id ?? null)
+    const [locationID, setLocationID] = useState(editingClaim?.location?.id ?? null)
+    const [title, setTitle] = useState(editingClaim?.title || '')
+    const [amount, setAmount] = useState(
+        editingClaim ? String(editingClaim.amount ?? '') : '')
+    const [expenseDate, setExpenseDate] = useState(editingClaim?.expenseDate || today())
+    const [description, setDescription] = useState(editingClaim?.description || '')
     const [assetList, setAssetList] = useState([])
-    const [uploadStatus, setUploadStatus] = useState('')
 
-    useEffect(() => {
-        navigation.setOptions({ title: isOnBehalf ? 'Key in a claim' : 'New claim' })
-    }, [navigation, isOnBehalf])
+    const [isSubmitting, setIsSubmitting] = useState(false)
+    const [uploadStatus, setUploadStatus] = useState('')
+    const [submitError, setSubmitError] = useState('')
 
     const load = useCallback(async () => {
         setIsLoading(true)
         setLoadError('')
         try {
             const requestList = [claimApi.getClaimTypeList(), claimApi.getLocationList()]
-            if (isOnBehalf) requestList.push(leaveApi.getStaffList())
+            if (canFileForOthers && !isEditing) requestList.push(leaveApi.getStaffList())
             const [typeResult, locationResult, staffResult] = await Promise.all(requestList)
-
             setClaimTypeList(typeResult.data || [])
-            setLocationList(Array.isArray(locationResult) ? locationResult : [])
+            // container/getlocationlist answers with a bare array, not {data}, unlike
+            // the hr endpoints next to it. Both shapes are accepted rather than
+            // depending on which app the endpoint happens to live in.
+            setLocationList(Array.isArray(locationResult)
+                ? locationResult
+                : (locationResult?.data || []))
             if (staffResult) setStaffList(staffResult.data || [])
         } catch (error) {
-            setLoadError(describeError(error, 'Could not load the form.'))
+            setLoadError(describeError(error, 'Could not load claim categories.'))
         }
         setIsLoading(false)
-    }, [isOnBehalf])
+    }, [canFileForOthers, isEditing])
 
     useEffect(() => { load() }, [load])
 
-    const totalAmount = useMemo(
-        () => itemList.reduce((sum, item) => sum + Number(item.amount || 0), 0),
-        [itemList],
-    )
-    const anyLineNeedsReceipt = itemList.some((item) => item.requiresReceipt)
-
+    const claimType = claimTypeList.find((item) => String(item.id) === String(claimTypeID))
     const selectedStaff = staffList.find((staff) => String(staff.id) === String(staffID))
-    // The claim is filed under the claimant's role, not the person keying it in.
-    const roleLabel = isOnBehalf
-        ? (selectedStaff ? 'their role at submission' : null)
-        : (user?.systemRole?.title || null)
-
-    const validationMessage = useMemo(() => {
-        if (isOnBehalf && !staffID) return 'Choose who this claim is for.'
-        if (title.trim().length === 0) return 'Give the claim a short title.'
-        if (!locationID) return 'Choose which location this claim is from.'
-        if (itemList.length === 0) return 'Add at least one expense.'
-        return ''
-    }, [isOnBehalf, staffID, title, locationID, itemList])
+    const amountValue = Number(amount)
+    const amountIsValid = amount !== '' && !Number.isNaN(amountValue) && amountValue > 0
+    const canSubmit = !!claimTypeID && !!locationID && amountIsValid
+        && title.trim().length > 0
 
     const onSubmit = async () => {
-        if (validationMessage !== '' || isSubmitting) return
+        if (!canSubmit || isSubmitting) return
         setIsSubmitting(true)
         setSubmitError('')
         try {
             const payload = {
                 title: title.trim(),
                 locationID,
-                itemList: itemList.map((item) => ({
-                    claimTypeID: item.claimTypeID,
-                    title: item.title,
-                    amount: String(item.amount),
-                    expenseDate: item.expenseDate,
-                    description: item.description || '',
-                })),
+                claimTypeID,
+                amount: amountValue.toFixed(2),
+                expenseDate,
+                description: description.trim(),
             }
-            const created = isOnBehalf
-                ? await claimApi.submitClaimOnBehalf({ ...payload, staffID })
-                : await claimApi.submitClaim(payload)
-
-            // Receipts attach by id, so they can only go up once the claim exists.
-            // The server returns its expenses in the order they were sent, which is
-            // how each local receipt finds the expense it belongs to.
-            const uploadList = []
-            const createdItemList = created.itemList || []
-            itemList.forEach((item, index) => {
-                const createdItem = createdItemList[index]
-                ;(item.assetList || []).forEach((asset) => {
-                    uploadList.push({ asset, claimItemID: createdItem?.id })
-                })
-            })
-            assetList.forEach((asset) => uploadList.push({ asset, claimItemID: undefined }))
+            // The claim has to exist before a receipt can hang off it, so the upload
+            // is a second step rather than part of the same request.
+            let claim
+            if (isEditing) {
+                claim = await claimApi.editClaim({ ...payload, claimID: editingClaim.id })
+            } else if (staffID) {
+                claim = await claimApi.submitClaimOnBehalf({ ...payload, staffID })
+            } else {
+                claim = await claimApi.submitClaim(payload)
+            }
 
             let failedCount = 0
-            for (let index = 0; index < uploadList.length; index += 1) {
-                setUploadStatus(`Uploading ${index + 1} of ${uploadList.length}...`)
+            for (let index = 0; index < assetList.length; index += 1) {
+                setUploadStatus(`Uploading ${index + 1} of ${assetList.length}...`)
                 try {
                     await claimApi.uploadClaimAttachment({
-                        claimID: created.id,
-                        claimItemID: uploadList[index].claimItemID,
-                        asset: uploadList[index].asset,
+                        claimID: claim.id,
+                        asset: assetList[index],
                     })
                 } catch (error) {
                     failedCount += 1
@@ -137,42 +120,29 @@ export default function ClaimFormScreen({ navigation, route }) {
             }
             setUploadStatus('')
 
-            const needsReceipt = itemList.some(
-                (item) => item.requiresReceipt && !(item.assetList || []).length)
-            if (failedCount > 0) {
-                Toast.show({
+            Toast.show(failedCount > 0
+                ? {
                     type: 'error',
-                    text1: 'Claim saved, but some receipts did not upload',
+                    text1: isEditing
+                        ? 'Claim saved, but some receipts did not upload'
+                        : 'Claim submitted, but some receipts did not upload',
                     text2: `${failedCount} failed. Attach them again from the claim.`,
-                })
-            } else {
-                Toast.show({
+                }
+                : {
                     type: 'success',
-                    text1: isOnBehalf ? 'Claim keyed in' : 'Claim submitted',
-                    text2: needsReceipt && assetList.length === 0
-                        ? 'Attach a receipt before it can be approved.'
-                        : 'It is now waiting for approval.',
+                    text1: `${title.trim()} ${isEditing ? 'saved' : 'submitted'}`,
                 })
-            }
-            navigation.replace('ClaimDetail', { claimID: created.id })
+            navigation.goBack()
         } catch (error) {
-            setSubmitError(describeError(error, 'Could not submit this claim.'))
+            setSubmitError(describeError(error, isEditing
+                ? 'Could not save this claim.'
+                : 'Could not submit this claim.'))
             setUploadStatus('')
             setIsSubmitting(false)
         }
     }
 
-    if (isLoading) return <LoadingView message="Loading the form" />
-
-    if (loadError) {
-        return (
-            <SafeAreaView style={styles.safe}>
-                <View style={styles.scroll}>
-                    <ErrorBanner message={loadError} onRetry={load} />
-                </View>
-            </SafeAreaView>
-        )
-    }
+    if (isLoading) return <LoadingView message="Loading categories" />
 
     return (
         <SafeAreaView style={styles.safe} edges={['bottom']}>
@@ -182,146 +152,86 @@ export default function ClaimFormScreen({ navigation, route }) {
                 keyboardVerticalOffset={90}
             >
                 <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
-                    <ErrorBanner message={submitError} />
+                    <ErrorBanner message={submitError || loadError} onRetry={loadError ? load : undefined} />
 
-                    {isOnBehalf && (
+                    {canFileForOthers && !isEditing && (
                         <SelectField
-                            label="Staff member"
-                            placeholder="Who is this claim for?"
+                            label="Whose expense is this?"
+                            hint="Leave blank if it is your own."
+                            placeholder="Mine"
                             value={staffID}
                             onChange={setStaffID}
-                            hint="The claim is filed under their role, and shows you as the person who entered it."
                             options={staffList.map((staff) => ({
                                 value: staff.id,
                                 label: staff.name,
                                 subtitle: [staff.position, staff.department]
-                                    .filter(Boolean).join(' - '),
+                                    .filter(Boolean).join(' - ') || undefined,
                             }))}
                         />
                     )}
 
                     <TextField
-                        label="Claim title"
-                        hint="Usually the period it covers, e.g. September 2026."
-                        placeholder="September 2026"
+                        label="Expense title"
+                        hint="A short name you will recognise in the list."
+                        placeholder="Petrol to the Miri site"
                         value={title}
                         onChangeText={setTitle}
                     />
 
                     <SelectField
-                        label="Location"
-                        placeholder="Which farm is this spend from?"
-                        value={locationID}
-                        onChange={setLocationID}
-                        options={locationList.map((location) => ({
-                            value: location.id,
-                            label: location.title,
+                        label="Category"
+                        placeholder="What kind of expense?"
+                        value={claimTypeID}
+                        onChange={setClaimTypeID}
+                        options={claimTypeList.map((item) => ({
+                            value: item.id,
+                            label: item.title,
+                            subtitle: item.requiresReceipt ? 'Receipt required' : undefined,
                         }))}
                     />
 
-                    {!!roleLabel && !isOnBehalf && (
-                        <View style={styles.roleNote}>
-                            <Ionicons name="person-outline" size={15} color={colors.inkMuted} />
-                            <Text style={styles.roleNoteText}>
-                                Filed as <Text style={styles.roleNoteStrong}>{roleLabel}</Text>
-                            </Text>
-                        </View>
-                    )}
-
-                    <SectionLabel style={styles.sectionSpacing}>
-                        Expenses ({itemList.length})
-                    </SectionLabel>
-
-                    {itemList.length === 0 && (
-                        <Card style={styles.emptyLines}>
-                            <Text style={type.small}>
-                                Nothing added yet. Add one expense for each receipt - a claim
-                                like "September 2026" holds a whole month of them.
-                            </Text>
-                        </Card>
-                    )}
-
-                    <View style={styles.lineList}>
-                        {itemList.map((item, index) => (
-                            <Card key={index} style={styles.lineCard}>
-                                <View style={styles.lineTop}>
-                                    <View style={styles.flex}>
-                                        <Text style={styles.lineTitle}>{item.title}</Text>
-                                        <Text style={styles.lineMeta}>
-                                            {item.claimTypeTitle} - {formatDisplayDate(item.expenseDate)}
-                                            {item.description ? ` - ${item.description}` : ''}
-                                        </Text>
-                                    </View>
-                                    <Text style={styles.lineAmount}>{formatMoney(item.amount)}</Text>
-                                    <Pressable
-                                        onPress={() => setItemList(
-                                            itemList.filter((_, position) => position !== index),
-                                        )}
-                                        hitSlop={10}
-                                        accessibilityLabel={`Remove ${item.title}`}
-                                    >
-                                        <Ionicons name="close-circle" size={20} color={colors.inkFaint} />
-                                    </Pressable>
-                                </View>
-
-                                <View style={styles.lineReceiptRow}>
-                                    {(item.assetList || []).map((asset, assetIndex) => (
-                                        <Image
-                                            key={`${asset.uri}-${assetIndex}`}
-                                            source={{ uri: asset.uri }}
-                                            style={styles.lineThumb}
-                                        />
-                                    ))}
-                                    <Pressable
-                                        onPress={async () => {
-                                            const picked = await pickAttachment()
-                                            if (!picked.length) return
-                                            setItemList(itemList.map((row, position) => (
-                                                position === index
-                                                    ? { ...row, assetList: [...(row.assetList || []), ...picked] }
-                                                    : row
-                                            )))
-                                        }}
-                                        style={styles.lineAddReceipt}
-                                    >
-                                        <Ionicons name="camera-outline" size={15}
-                                                  color={item.requiresReceipt && !(item.assetList || []).length
-                                                      ? colors.pending : colors.brandDark} />
-                                        <Text style={[
-                                            styles.lineAddReceiptText,
-                                            item.requiresReceipt && !(item.assetList || []).length
-                                                && styles.lineAddReceiptRequired,
-                                        ]}>
-                                            {(item.assetList || []).length > 0
-                                                ? 'Add another receipt'
-                                                : item.requiresReceipt
-                                                    ? 'Receipt required' : 'Add receipt'}
-                                        </Text>
-                                    </Pressable>
-                                </View>
-                            </Card>
-                        ))}
-                    </View>
-
-                    <PrimaryButton
-                        title="Add an expense"
-                        variant="ghost"
-                        onPress={() => setIsAddingLine(true)}
-                        style={styles.addLine}
+                    <SelectField
+                        label="Location"
+                        placeholder="Which farm was this for?"
+                        value={locationID}
+                        onChange={setLocationID}
+                        options={locationList.map((item) => ({
+                            value: item.id,
+                            label: item.title,
+                        }))}
                     />
 
-                    <Card style={styles.totalCard}>
-                        <Text style={styles.totalLabel}>CLAIM TOTAL</Text>
-                        <Text style={styles.totalValue}>{formatMoney(totalAmount)}</Text>
-                        <Text style={styles.totalCaption}>
-                            Added up from the expenses - you never type this yourself.
-                        </Text>
-                    </Card>
+                    <TextField
+                        label="Amount (RM)"
+                        placeholder="45.50"
+                        value={amount}
+                        onChangeText={setAmount}
+                        keyboardType="decimal-pad"
+                        error={amount !== '' && !amountIsValid
+                            ? 'Enter an amount greater than zero.' : ''}
+                    />
+
+                    <DateField
+                        label="Date of the expense"
+                        hint="When the money was spent, not today."
+                        value={expenseDate}
+                        onChange={setExpenseDate}
+                        maximumDate={new Date()}
+                    />
+
+                    <TextField
+                        label="Notes"
+                        placeholder="Optional"
+                        value={description}
+                        onChangeText={setDescription}
+                    />
 
                     <AttachmentStrip
-                        label="Documents for the whole claim"
-                        hint="Optional. Receipts for individual expenses go on the expense itself, above."
-                        required={false}
+                        label={claimType?.requiresReceipt ? 'Receipt (required)' : 'Receipt'}
+                        hint={claimType?.requiresReceipt
+                            ? 'This category needs its own receipt before it can be approved.'
+                            : 'Optional for this category.'}
+                        required={!!claimType?.requiresReceipt}
                         assetList={assetList}
                         onAdd={async () => {
                             const picked = await pickAttachment()
@@ -332,136 +242,17 @@ export default function ClaimFormScreen({ navigation, route }) {
                         )}
                     />
 
-                    {!!validationMessage && (
-                        <Text style={styles.validation}>{validationMessage}</Text>
-                    )}
-
                     <PrimaryButton
-                        title={uploadStatus || (isOnBehalf
-                            ? 'Submit for this staff member' : 'Submit claim')}
+                        title={uploadStatus
+                            || (isEditing ? 'Save changes'
+                                : (selectedStaff ? `Submit for ${selectedStaff.name}` : 'Submit claim'))}
                         onPress={onSubmit}
                         loading={isSubmitting}
-                        disabled={validationMessage !== ''}
+                        disabled={!canSubmit}
                     />
                 </ScrollView>
             </KeyboardAvoidingView>
-
-            <AddLineModal
-                isVisible={isAddingLine}
-                claimTypeList={claimTypeList}
-                onClose={() => setIsAddingLine(false)}
-                onAdd={(line) => { setItemList([...itemList, line]); setIsAddingLine(false) }}
-            />
         </SafeAreaView>
-    )
-}
-
-function AddLineModal({ isVisible, claimTypeList, onClose, onAdd }) {
-    const [claimTypeID, setClaimTypeID] = useState(null)
-    const [title, setTitle] = useState('')
-    const [amount, setAmount] = useState('')
-    const [expenseDate, setExpenseDate] = useState(today())
-    const [description, setDescription] = useState('')
-    const [lineAssetList, setLineAssetList] = useState([])
-
-    useEffect(() => {
-        if (isVisible) {
-            setClaimTypeID(null)
-            setTitle('')
-            setAmount('')
-            setExpenseDate(today())
-            setDescription('')
-            setLineAssetList([])
-        }
-    }, [isVisible])
-
-    const claimType = claimTypeList.find(
-        (item) => String(item.id) === String(claimTypeID),
-    )
-    const amountValue = Number(amount)
-    const amountIsValid = amount !== '' && !Number.isNaN(amountValue) && amountValue > 0
-    const canAdd = !!claimTypeID && amountIsValid
-
-    return (
-        <FullScreenModal isVisible={isVisible} title="Add an expense" onClose={onClose}>
-                    <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
-                        <TextField
-                            label="Expense title"
-                            hint="A short name you will recognise in the list."
-                            placeholder="Petrol to the Miri site"
-                            value={title}
-                            onChangeText={setTitle}
-                        />
-
-                        <SelectField
-                            label="Category"
-                            placeholder="What kind of expense?"
-                            value={claimTypeID}
-                            onChange={setClaimTypeID}
-                            options={claimTypeList.map((item) => ({
-                                value: item.id,
-                                label: item.title,
-                                subtitle: item.requiresReceipt ? 'Receipt required' : undefined,
-                            }))}
-                        />
-
-                        <TextField
-                            label="Amount (RM)"
-                            placeholder="45.50"
-                            value={amount}
-                            onChangeText={setAmount}
-                            keyboardType="decimal-pad"
-                            error={amount !== '' && !amountIsValid
-                                ? 'Enter an amount greater than zero.' : ''}
-                        />
-
-                        <DateField
-                            label="Date of the expense"
-                            hint="When the money was spent, not today."
-                            value={expenseDate}
-                            onChange={setExpenseDate}
-                            maximumDate={new Date()}
-                        />
-
-                        <TextField
-                            label="Notes"
-                            placeholder="Optional"
-                            value={description}
-                            onChangeText={setDescription}
-                        />
-
-                        <AttachmentStrip
-                            label={claimType?.requiresReceipt ? 'Receipt (required)' : 'Receipt'}
-                            hint={claimType?.requiresReceipt
-                                ? 'This category needs its own receipt before it can be approved.'
-                                : 'Optional for this category.'}
-                            required={!!claimType?.requiresReceipt}
-                            assetList={lineAssetList}
-                            onAdd={async () => {
-                                const picked = await pickAttachment()
-                                if (picked.length) setLineAssetList([...lineAssetList, ...picked])
-                            }}
-                            onRemove={(index) => setLineAssetList(
-                                lineAssetList.filter((_, position) => position !== index),
-                            )}
-                        />
-
-                        <PrimaryButton
-                            title="Add to claim"
-                            onPress={() => onAdd({
-                                claimTypeID,
-                                claimTypeTitle: claimType?.title,
-                                title: title.trim() || claimType?.title,
-                                requiresReceipt: !!claimType?.requiresReceipt,
-                                amount: amountValue.toFixed(2),
-                                expenseDate,
-                                description: description.trim(),
-                                assetList: lineAssetList,
-                            })}
-                            disabled={!canAdd}
-                        />
-                    </ScrollView>
-        </FullScreenModal>
     )
 }
 
@@ -469,60 +260,4 @@ const styles = StyleSheet.create({
     safe: { flex: 1, backgroundColor: colors.ground },
     flex: { flex: 1 },
     scroll: { padding: spacing.lg, paddingBottom: spacing.xxl },
-    sectionSpacing: { marginTop: spacing.sm },
-
-    roleNote: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: spacing.sm,
-        padding: spacing.md,
-        backgroundColor: colors.surface,
-        borderRadius: radius.md,
-        borderWidth: 1,
-        borderColor: colors.line,
-        marginBottom: spacing.lg,
-    },
-    roleNoteText: { ...type.small, flex: 1 },
-    roleNoteStrong: { fontWeight: '700', color: colors.ink },
-
-    emptyLines: { marginBottom: spacing.sm },
-    lineList: { gap: spacing.sm },
-    lineCard: { gap: spacing.md },
-    lineTop: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.md },
-    lineTitle: { ...type.body, fontWeight: '600' },
-    lineMeta: { ...type.small, fontSize: 12, marginTop: 1 },
-    lineAmount: { ...type.body, fontWeight: '700' },
-    lineReceiptRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: spacing.sm },
-    lineThumb: { width: 40, height: 40, borderRadius: radius.sm },
-    lineAddReceipt: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-    lineAddReceiptText: { fontSize: 12, fontWeight: '600', color: colors.brandDark },
-    lineAddReceiptRequired: { color: colors.pending },
-    addLine: { marginTop: spacing.md },
-
-    totalCard: {
-        backgroundColor: colors.brandSoft,
-        borderColor: colors.brand,
-        marginTop: spacing.lg,
-        marginBottom: spacing.lg,
-    },
-    totalLabel: { ...type.label, color: colors.brandDark },
-    totalValue: {
-        fontSize: 28,
-        fontWeight: '800',
-        color: colors.brandDark,
-        marginVertical: spacing.xs,
-    },
-    totalCaption: { ...type.small, fontSize: 12, color: colors.brandDark, opacity: 0.8 },
-
-    validation: { ...type.small, color: colors.pending, marginBottom: spacing.md },
-
-    modalHeader: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        padding: spacing.lg,
-        borderBottomWidth: 1,
-        borderBottomColor: colors.line,
-    },
-    modalTitle: { ...type.heading },
 })

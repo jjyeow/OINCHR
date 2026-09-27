@@ -30,11 +30,13 @@ export const PERMISSION = {
     MANAGE_CONTAINER_PERMISSIONS: 'Manage Container Permissions',
     ADD_CONTAINER_MEMBER: 'Add Container Member',
 
-    // Claims
+    // Claims. A claim is one expense, so submitting one is the whole act - there is
+    // no folder to open and no line to add afterwards.
     SUBMIT_CLAIM: 'Submit Claim',
-    CREATE_CLAIM: 'Create Claim',
+    EDIT_CLAIM: 'Edit Claim',
     VIEW_ALL_CLAIMS: 'View All Claims',
     SUBMIT_CLAIM_ON_BEHALF: 'Submit Claim On Behalf',
+    VIEW_CLAIM_PERIODS: 'View Claim Periods',
     MARK_CLAIM_PAID: 'Mark Claim Paid',
     MANAGE_CLAIM_TYPE: 'Manage Claim Categories',
     APPROVE_CLAIM: 'Approve Claim',

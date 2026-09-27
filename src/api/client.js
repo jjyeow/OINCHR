@@ -1,8 +1,14 @@
 import AsyncStorage from '@react-native-async-storage/async-storage'
 import axios from 'axios'
+import * as Device from 'expo-device'
 import qs from 'qs'
 
-const DEV_BASE_URL = 'http://127.0.0.1:8000/'
+// On a real phone 127.0.0.1 is the phone, so a device build has to use the deployed
+// server. A simulator shares the Mac's network stack, so there localhost reaches the
+// Django running on it - which is the whole point of working locally. Device.isDevice
+// is the only thing that separates the two, so it decides rather than a hand-edit.
+const LOCAL_BASE_URL = 'http://127.0.0.1:8000/'
+const DEV_BASE_URL = Device.isDevice ? 'https://server.oinc.farm/' : LOCAL_BASE_URL
 const PROD_BASE_URL = 'https://server.oinc.farm/'
 
 export const TOKEN_KEY = 'token'

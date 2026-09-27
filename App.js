@@ -19,12 +19,10 @@ import TeamCalendarScreen from './src/screens/TeamCalendarScreen'
 import LeaveTypeListScreen from './src/screens/LeaveTypeListScreen'
 import LeaveTypeFormScreen from './src/screens/LeaveTypeFormScreen'
 import PublicHolidayScreen from './src/screens/PublicHolidayScreen'
-import ClaimFormScreen from './src/screens/ClaimFormScreen'
 import ClaimListScreen from './src/screens/ClaimListScreen'
 import ClaimDetailScreen from './src/screens/ClaimDetailScreen'
 import ClaimTypeListScreen from './src/screens/ClaimTypeListScreen'
-import OpenClaimScreen from './src/screens/OpenClaimScreen'
-import AddExpenseScreen from './src/screens/AddExpenseScreen'
+import ClaimFormScreen from './src/screens/ClaimFormScreen'
 import UserPermissionScreen from './src/screens/UserPermissionScreen'
 
 const Stack = createNativeStackNavigator()
@@ -117,20 +115,19 @@ function RootNavigator() {
                         options={{ title: 'Public holidays' }}
                     />
                     <Stack.Screen
-                        name="OpenClaim"
-                        component={OpenClaimScreen}
-                        options={{ title: 'Open a shared claim' }}
-                    />
-                    <Stack.Screen
                         name="SubmitClaim"
                         component={ClaimFormScreen}
-                        options={{ title: 'New claim' }}
+                        options={{ title: 'Submit a claim' }}
                     />
                     <Stack.Screen
                         name="KeyInClaim"
                         component={ClaimFormScreen}
-                        initialParams={{ mode: 'onBehalf' }}
                         options={{ title: 'Key in a claim' }}
+                    />
+                    <Stack.Screen
+                        name="EditClaim"
+                        component={ClaimFormScreen}
+                        options={{ title: 'Edit claim' }}
                     />
                     <Stack.Screen
                         name="MyClaims"
@@ -152,11 +149,6 @@ function RootNavigator() {
                         name="ClaimTypeList"
                         component={ClaimTypeListScreen}
                         options={{ title: 'Claim categories' }}
-                    />
-                    <Stack.Screen
-                        name="AddExpense"
-                        component={AddExpenseScreen}
-                        options={{ title: 'Add an expense' }}
                     />
                     <Stack.Screen
                         name="UserPermission"

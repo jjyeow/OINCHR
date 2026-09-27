@@ -23,8 +23,8 @@ export default function ClaimTabScreen({ navigation }) {
     const [errorMessage, setErrorMessage] = useState('')
     const [isRefreshing, setIsRefreshing] = useState(false)
 
+    const canSubmitClaim = can(PERMISSION.SUBMIT_CLAIM)
     const canKeyIn = can(PERMISSION.SUBMIT_CLAIM_ON_BEHALF)
-    const canCreateClaim = can(PERMISSION.CREATE_CLAIM)
     const canViewAll = can(PERMISSION.VIEW_ALL_CLAIMS)
     const canMarkPaid = can(PERMISSION.MARK_CLAIM_PAID)
     const canManageClaimType = can(PERMISSION.MANAGE_CLAIM_TYPE)
@@ -103,12 +103,14 @@ export default function ClaimTabScreen({ navigation }) {
                 )}
 
                 <View style={styles.actionList}>
-                    <ActionRow
-                        icon="add-circle-outline"
-                        title="Submit a claim"
-                        subtitle="Petrol, meals, tools and the rest"
-                        onPress={() => navigation.navigate('SubmitClaim')}
-                    />
+                    {canSubmitClaim && (
+                        <ActionRow
+                            icon="add-circle-outline"
+                            title="Submit a claim"
+                            subtitle="Petrol, meals, tools and the rest - one expense per claim"
+                            onPress={() => navigation.navigate('SubmitClaim')}
+                        />
+                    )}
                     <ActionRow
                         icon="wallet-outline"
                         title="My claims"
@@ -117,18 +119,10 @@ export default function ClaimTabScreen({ navigation }) {
                     />
                 </View>
 
-                {(canKeyIn || canViewAll || canManageClaimType || canCreateClaim) && (
+                {(canKeyIn || canViewAll || canManageClaimType) && (
                     <>
                         <SectionLabel style={styles.sectionSpacing}>Managing claims</SectionLabel>
                         <View style={styles.actionList}>
-                            {canCreateClaim && (
-                                <ActionRow
-                                    icon="folder-open-outline"
-                                    title="Open a shared claim"
-                                    subtitle="A folder like September 2026 for the team to file into"
-                                    onPress={() => navigation.navigate('OpenClaim')}
-                                />
-                            )}
                             {canKeyIn && (
                                 <ActionRow
                                     icon="documents-outline"
@@ -182,7 +176,7 @@ export default function ClaimTabScreen({ navigation }) {
                                             </View>
                                             <View style={styles.recentRight}>
                                                 <Text style={styles.recentAmount}>
-                                                    {formatMoney(claim.totalAmount)}
+                                                    {formatMoney(claim.amount)}
                                                 </Text>
                                                 <View style={[styles.pill, {
                                                     backgroundColor: statusStyle.background,

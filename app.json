@@ -20,7 +20,10 @@
         "foregroundImage": "./assets/android-icon-foreground.png",
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
-      }
+      },
+      "permissions": [
+        "android.permission.RECORD_AUDIO"
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -35,7 +38,15 @@
           "cameraPermission": "OINCHR uses the camera so you can photograph an MC or receipt."
         }
       ],
-      "expo-font"
-    ]
+      "expo-font",
+      "expo-sharing",
+      "expo-web-browser"
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "e290675d-c807-4eae-9695-c050ddd9ae4d"
+      }
+    },
+    "owner": "oincapp"
   }
 }

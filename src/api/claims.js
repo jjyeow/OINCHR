@@ -117,12 +117,30 @@ export function cancelClaim({ claimID, note }) {
 
 // receipts. A claim is one expense, so a receipt hangs off the claim directly - more
 // than one is fine, since a receipt and the invoice behind it are the same spend.
+// The server identifies a file by its extension, so a made-up name has to carry the
+// right one - calling a PDF or a HEIC "receipt.jpg" gets it stored under a name that
+// lies about what it is, and the app later reads that extension to decide how to
+// show it.
+const EXTENSION_BY_MIME = {
+    'application/pdf': 'pdf',
+    'image/png': 'png',
+    'image/heic': 'heic',
+    'image/heif': 'heif',
+    'image/webp': 'webp',
+    'image/gif': 'gif',
+}
+
+function fallbackFileName(asset) {
+    const extension = EXTENSION_BY_MIME[(asset.mimeType || '').toLowerCase()] || 'jpg'
+    return `receipt-${Date.now()}.${extension}`
+}
+
 export function uploadClaimAttachment({ claimID, asset }) {
     const formData = new FormData()
     formData.append('claimID', String(claimID))
     formData.append('image', {
         uri: asset.uri,
-        name: asset.fileName || `receipt-${Date.now()}.jpg`,
+        name: asset.fileName || fallbackFileName(asset),
         type: asset.mimeType || 'image/jpeg',
     })
     return postForm('hr/uploadclaimattachment', formData)
